@@ -1,150 +1,94 @@
 """
-Bible JSON Converter -
-Converts nested Bible JSON to Flat Array Structure for Flutter/Isar
-Input: {Book: {Chapter: {Verse: text}}}
-Output: Flat array structure with verse numbers
+Bible JSON Converter - Remove Verse Numbers
+Removes verse numbering from Bible JSON files
+Input: Flat array structure with verse numbers
+Output: Flat array structure without verse numbers
 """
 
 import json
 import sys
 import os
+import re
 from pathlib import Path
 
-# Complete 66 canonical books in order
-BOOK_INFO = [
-    # Old Testament (39 books)
-    ("Genesis", "Old"), ("Exodus", "Old"), ("Leviticus", "Old"), ("Numbers", "Old"),
-    ("Deuteronomy", "Old"), ("Joshua", "Old"), ("Judges", "Old"), ("Ruth", "Old"),
-    ("1 Samuel", "Old"), ("2 Samuel", "Old"), ("1 Kings", "Old"), ("2 Kings", "Old"),
-    ("1 Chronicles", "Old"), ("2 Chronicles", "Old"), ("Ezra", "Old"), ("Nehemiah", "Old"),
-    ("Esther", "Old"), ("Job", "Old"), ("Psalms", "Old"), ("Proverbs", "Old"),
-    ("Ecclesiastes", "Old"), ("Song of Solomon", "Old"), ("Isaiah", "Old"), ("Jeremiah", "Old"),
-    ("Lamentations", "Old"), ("Ezekiel", "Old"), ("Daniel", "Old"), ("Hosea", "Old"),
-    ("Joel", "Old"), ("Amos", "Old"), ("Obadiah", "Old"), ("Jonah", "Old"),
-    ("Micah", "Old"), ("Nahum", "Old"), ("Habakkuk", "Old"), ("Zephaniah", "Old"),
-    ("Haggai", "Old"), ("Zechariah", "Old"), ("Malachi", "Old"),
-    # New Testament (27 books)
-    ("Matthew", "New"), ("Mark", "New"), ("Luke", "New"), ("John", "New"),
-    ("Acts", "New"), ("Romans", "New"), ("1 Corinthians", "New"), ("2 Corinthians", "New"),
-    ("Galatians", "New"), ("Ephesians", "New"), ("Philippians", "New"), ("Colossians", "New"),
-    ("1 Thessalonians", "New"), ("2 Thessalonians", "New"), ("1 Timothy", "New"), ("2 Timothy", "New"),
-    ("Titus", "New"), ("Philemon", "New"), ("Hebrews", "New"), ("James", "New"),
-    ("1 Peter", "New"), ("2 Peter", "New"), ("1 John", "New"), ("2 John", "New"),
-    ("3 John", "New"), ("Jude", "New"), ("Revelation", "New")
-]
 
-# Common alternate book name variants mapped to canonical BOOK_INFO names
-# Keys are lower-cased variants that may appear in input files.
-BOOK_NAME_ALIASES = {
-    "psalm": "Psalms",
-    "psalms": "Psalms",
-    "song of songs": "Song of Solomon",
-    "song of solomon": "Song of Solomon",
-    # add more aliases here as needed
-}
-
-def convert_to_flat_array(input_data, bible_name="King James Version"):
+def remove_verse_numbers(input_data):
     """
-    Convert nested Bible JSON to Flat Array Structure
-    
-    Input format: {Book: {Chapter: {Verse: text}}}
-    Output format: Flat array with verse numbers prepended
+    Remove verse numbers from Bible JSON
     
     Args:
-        input_data: Nested dictionary structure
-        bible_name: Name of the Bible translation
+        input_data: Dictionary with Bible data in flat array format
         
     Returns:
-        Dictionary in flat array format ready for Flutter/Isar
+        Dictionary with verse numbers removed from all verses
     """
     
-    # Create lookup for book info
-    book_lookup = {name: (idx + 1, testament) for idx, (name, testament) in enumerate(BOOK_INFO)}
+    bible_name = input_data.get("name", "Unknown Bible")
+    books = input_data.get("books", [])
     
-    books = []
     stats = {
         'books': 0,
         'chapters': 0,
         'verses': 0,
-        'old_testament': 0,
-        'new_testament': 0
+        'verses_cleaned': 0
     }
     
-    print(f"\n📖 Converting: {bible_name}")
+    print(f"\n📖 Processing: {bible_name}")
     print("=" * 60)
     
-    for book_name, chapters_dict in input_data.items():
-        # Normalize common alternate book names (case-insensitive)
-        lookup_key = book_name.strip().lower()
-        canonical_name = BOOK_NAME_ALIASES.get(lookup_key, book_name)
-        if canonical_name != book_name:
-            print(f"ℹ️  Normalized: '{book_name}' -> '{canonical_name}'")
-
-        # Get book info from lookup
-        if canonical_name in book_lookup:
-            book_number, testament = book_lookup[canonical_name]
-            book_name_used = canonical_name
-        else:
-            # Handle books not in standard list
-            print(f"⚠️  Warning: '{book_name}' not in standard list")
-            book_number = len(books) + 1
-            testament = "Old"
-            book_name_used = book_name
-
-        # Convert chapters to flat array format
-        chapters = []
-        for chapter_num in sorted(chapters_dict.keys(), key=int):
-            verses_dict = chapters_dict[chapter_num]
-            
-            # Build verse array with numbers prepended
-            verses = []
-            for verse_num in sorted(verses_dict.keys(), key=int):
-                verse_text = verses_dict[verse_num]
-                # Prepend verse number
-                numbered_verse = f"{verse_num} {verse_text}"
-                verses.append(numbered_verse)
-            
-            chapters.append(verses)
-            stats['verses'] += len(verses)
+    cleaned_books = []
+    
+    for book in books:
+        book_name = book.get("name", "Unknown")
+        book_number = book.get("book_number", 0)
+        testament = book.get("testament", "Unknown")
+        chapters = book.get("chapters", [])
         
-        # Create book object (use the normalized/canonical name where available)
-        book_obj = {
-            "name": book_name_used,
+        # Process each chapter
+        cleaned_chapters = []
+        for chapter in chapters:
+            cleaned_verses = []
+            for verse in chapter:
+                stats['verses'] += 1
+                
+                # Remove leading verse numbers (e.g., "1 ", "2 ", "10 ", etc.)
+                cleaned_verse = re.sub(r'^\d+\s+', '', verse)
+                
+                if cleaned_verse != verse:
+                    stats['verses_cleaned'] += 1
+                
+                cleaned_verses.append(cleaned_verse)
+            
+            cleaned_chapters.append(cleaned_verses)
+            stats['chapters'] += 1
+        
+        # Create cleaned book object
+        cleaned_book = {
+            "name": book_name,
             "book_number": book_number,
             "testament": testament,
-            "chapters": chapters
+            "chapters": cleaned_chapters
         }
         
-        books.append(book_obj)
-        
-        # Update stats
+        cleaned_books.append(cleaned_book)
         stats['books'] += 1
-        stats['chapters'] += len(chapters)
-        if testament == "Old":
-            stats['old_testament'] += 1
-        else:
-            stats['new_testament'] += 1
         
         # Progress output
         testament_icon = "📜" if testament == "Old" else "✝️ "
-        print(f"{testament_icon} {book_name:<20} #{book_number:<3} {len(chapters):>3} chapters  {testament} Testament")
-    
-    # Sort books by canonical order
-    books.sort(key=lambda x: x["book_number"])
+        print(f"{testament_icon} {book_name:<25} {len(cleaned_chapters):>3} chapters  {testament} Testament")
     
     # Print summary
     print("=" * 60)
-    print(f"✅ Conversion Complete!")
+    print(f"✅ Processing Complete!")
     print(f"   📚 Total Books: {stats['books']}")
-    print(f"   📜 Old Testament: {stats['old_testament']}")
-    print(f"   ✝️  New Testament: {stats['new_testament']}")
     print(f"   📑 Total Chapters: {stats['chapters']}")
     print(f"   📝 Total Verses: {stats['verses']:,}")
+    print(f"   🧹 Verses Cleaned: {stats['verses_cleaned']:,}")
     print()
     
     return {
         "name": bible_name,
-        "books": books
+        "books": cleaned_books
     }
 
 
@@ -197,29 +141,43 @@ def save_json_file(data, filepath, minify=False):
 def main():
     """Main execution function"""
     
-    # === CONFIGURATION ===
-    INPUT_FILE = "data/input_bible.json"
-    OUTPUT_FILE = "data/output_bible.json"
-    BIBLE_NAME = "King James Version"
-    # =====================
-    
     print("\n" + "=" * 60)
     print("   BIBLE JSON CONVERTER - PRODUCTION READY")
     print("   Nested → Flat Array Structure for Flutter/Isar")
     print("=" * 60)
+    print()
+    
+    # Get input file path from user
+    print("📁 Enter the input file path:")
+    print("   Example: bible/ASV/ASV_bible.json")
+    print("   or: bible/KJV/KJV_Bible.json")
+    INPUT_FILE = input("   Path: ").strip()
     
     # Check if input file exists
     if not os.path.exists(INPUT_FILE):
         print(f"\n❌ Input file not found: {INPUT_FILE}")
-        print(f"   Please upload your full Bible JSON to: {INPUT_FILE}")
+        print(f"   Please check the file path and try again.")
         print()
         sys.exit(1)
+    
+    # Extract Bible name from filename
+    filename = os.path.basename(INPUT_FILE)
+    # Remove _bible.json or _Bible.json and use the prefix as name
+    BIBLE_NAME = filename.replace('_bible.json', '').replace('_Bible.json', '').replace('.json', '')
+    
+    # Generate output filename
+    input_dir = os.path.dirname(INPUT_FILE)
+    OUTPUT_FILE = os.path.join(input_dir, f"{BIBLE_NAME}_clean.json")
+    
+    print(f"\n📖 Bible Version: {BIBLE_NAME}")
+    print(f"💾 Output will be saved to: {OUTPUT_FILE}")
+    print()
     
     # Load input
     input_data = load_json_file(INPUT_FILE)
     
-    # Convert to flat array structure
-    output_data = convert_to_flat_array(input_data, BIBLE_NAME)
+    # Remove verse numbers from the Bible data
+    output_data = remove_verse_numbers(input_data)
     
     # Save output
     print("💾 Saving output file...")
